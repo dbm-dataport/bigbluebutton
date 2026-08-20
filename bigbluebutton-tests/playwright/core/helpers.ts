@@ -3,6 +3,7 @@ import { format } from 'node:util';
 
 import { type Browser, type ConsoleMessage, expect, test, type TestInfo } from '@playwright/test';
 import axios, { AxiosResponse } from 'axios';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 // This is version 4 of chalk, not version 5, which uses ESM
 import * as chalk from 'chalk';
 import * as dotenv from 'dotenv';
@@ -15,6 +16,21 @@ import { parameters } from './parameters';
 import { runScript } from './util';
 
 dotenv.config();
+
+// Proxy configuration: prefer environment variables, fallback to the provided proxy
+const DEFAULT_PROXY = 'http://10.65.117.35:3128';
+const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || DEFAULT_PROXY;
+let proxyAgent: HttpsProxyAgent | undefined;
+if (proxyUrl) {
+  try {
+    proxyAgent = new HttpsProxyAgent(proxyUrl);
+  } catch (err) {
+    // Don't throw during import; tests will proceed without agent if creation fails
+    // eslint-disable-next-line no-console
+    console.warn('Failed to create proxy agent for', proxyUrl, err);
+    proxyAgent = undefined;
+  }
+}
 
 interface ErrorInfo {
   type: 'error' | 'pageerror';
@@ -93,7 +109,12 @@ export async function apiCall<T = unknown>(
   callParams?: Record<string, string>,
 ): Promise<AxiosResponse<T>> {
   const url = getApiCallUrl(name, callParams || null);
-  const response = await axios.get<T>(url, { adapter: 'http' });
+  const response = await axios.get<T>(url, {
+    httpAgent: proxyAgent,
+    httpsAgent: proxyAgent,
+    proxy: false,
+    adapter: 'http',
+  });
   const parsedData = typeof response.data === 'string' ? await xml2js.parseStringPromise(response.data) : response.data;
   return {
     ...response,
@@ -121,15 +142,12 @@ export function createMeetingPromise(
   createModules?: string,
 ): Promise<AxiosResponse> {
   const url = createMeetingUrl(createParameter, customMeetingId);
-  // Modules (e.g. clientSettingsOverride) travel in the POST body; the
-  // checksum covers the query string either way.
-  if (createModules !== undefined) {
-    return axios.post(url, createModules, {
-      adapter: 'http',
-      headers: { 'Content-Type': 'application/xml' },
-    });
-  }
-  return axios.get(url, { adapter: 'http' });
+  return axios.get(url, {
+    httpAgent: proxyAgent,
+    httpsAgent: proxyAgent,
+    proxy: false,
+    adapter: 'http',
+  });
 }
 
 export async function createMeeting(
