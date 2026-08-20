@@ -136,7 +136,11 @@ export function createMeetingUrl(createParameter?: string, customMeetingId?: str
   return url;
 }
 
-export function createMeetingPromise(createParameter?: string, customMeetingId?: string): Promise<AxiosResponse> {
+export function createMeetingPromise(
+  createParameter?: string,
+  customMeetingId?: string,
+  createModules?: string,
+): Promise<AxiosResponse> {
   const url = createMeetingUrl(createParameter, customMeetingId);
   return axios.get(url, {
     httpAgent: proxyAgent,
@@ -146,9 +150,31 @@ export function createMeetingPromise(createParameter?: string, customMeetingId?:
   });
 }
 
-export async function createMeeting(createParameter?: string, customMeetingId?: string): Promise<string> {
-  const promise = createMeetingPromise(createParameter, customMeetingId);
+export async function createMeeting(
+  createParameter?: string,
+  customMeetingId?: string,
+  createModules?: string,
+): Promise<string> {
+  const promise = createMeetingPromise(createParameter, customMeetingId, createModules);
   const response = await promise;
+  expect(response.status).toEqual(200);
+  const xmlResponse = await xml2js.parseStringPromise(response.data);
+  return xmlResponse.response.meetingID[0];
+}
+
+// Create a meeting sending an xml `<modules>` payload in the POST body (e.g.
+// sharedNotesInitialContentJson / sharedNotesInitialContentMarkdown). The checksum
+// only covers the query string, so createMeetingUrl still yields a valid URL.
+export async function createMeetingWithModules(
+  modulesXml: string,
+  createParameter?: string,
+  customMeetingId?: string,
+): Promise<string> {
+  const url = createMeetingUrl(createParameter, customMeetingId);
+  const response = await axios.post(url, modulesXml, {
+    adapter: 'http',
+    headers: { 'Content-Type': 'application/xml' },
+  });
   expect(response.status).toEqual(200);
   const xmlResponse = await xml2js.parseStringPromise(response.data);
   return xmlResponse.response.meetingID[0];
